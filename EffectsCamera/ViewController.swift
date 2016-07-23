@@ -16,6 +16,11 @@ private let gpuEnabled = true // Set to true to render to the GPU. Set to false 
 //private let videoSize = CGSize(width: 1080, height: 1920) // Portrait
 private let videoSize = CGSize(width: 1920, height: 1080) // Landscape
 
+private let pixelBufferBounds = CGRect(
+    origin: CGPointZero,
+    size: videoSize
+)
+
 private let cameraTransform = CGAffineTransformMakeRotation(CGFloat(-M_PI * 0.5)) // clockwise
 private let outputTransform = CGAffineTransformMakeRotation(CGFloat(M_PI * 0.5)) // counter-clockwise
 //private let rotationTransform = CGAffineTransformIdentity
@@ -33,6 +38,7 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
 
     private var cameraOutput: AVCaptureVideoDataOutput!
 
+    private var pixelBufferAdaptor: AVAssetWriterInputPixelBufferAdaptor?
     private var assetWriterInput: AVAssetWriterInput?
     private var assetWriter: AVAssetWriter?
 
@@ -84,7 +90,12 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
             withInputParameters: nil
         )
 
-        filter = noirFilter
+        let processFilter = CIFilter(
+            name: "CIPhotoEffectProcess",
+            withInputParameters: nil
+        )
+
+        filter = processFilter
 
         // Context to render to video file.
         let outputGLContext = EAGLContext(
@@ -96,7 +107,9 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
             options: [
                 kCIContextOutputColorSpace: NSNull(),
                 kCIContextWorkingColorSpace: NSNull(),
-                kCIContextUseSoftwareRenderer: NSNumber(booleanLiteral: !gpuEnabled)
+                kCIContextUseSoftwareRenderer: NSNumber(booleanLiteral: !gpuEnabled),
+                kCIContextHighQualityDownsample: NSNumber(booleanLiteral: false),
+                kCIContextPriorityRequestLow: NSNumber(booleanLiteral: true)
             ]
         )
 
@@ -113,7 +126,9 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
             options: [
                 kCIContextOutputColorSpace: NSNull(),
                 kCIContextWorkingColorSpace: NSNull(),
-                kCIContextUseSoftwareRenderer: NSNumber(booleanLiteral: !gpuEnabled)
+                kCIContextUseSoftwareRenderer: NSNumber(booleanLiteral: !gpuEnabled),
+                kCIContextHighQualityDownsample: NSNumber(booleanLiteral: false),
+                kCIContextPriorityRequestLow: NSNumber(booleanLiteral: true)
             ]
         )
 
@@ -184,7 +199,10 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
         // Update the GLView to display the filtered image.
         let previewImage = filteredImage.imageByApplyingTransform(cameraTransform)
         previewContext.drawImage(previewImage, inRect: self.targetRect, fromRect: previewImage.extent)
-        performSelectorOnMainThread(#selector(updateView), withObject: nil, waitUntilDone: false)
+        dispatch_async(dispatch_get_main_queue()) {
+            self.glView.display()
+        }
+//        performSelectorOnMainThread(#selector(updateView), withObject: nil, waitUntilDone: false)
     }
 
     @objc private func updateView() {
@@ -193,7 +211,7 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
 
     private func appendImage(image: CIImage, time: CMTime, duration: CMTime) {
 
-        guard let assetWriterInput = self.assetWriterInput else {
+        guard let assetWriterInput = self.assetWriterInput, let pixelBufferAdaptor = self.pixelBufferAdaptor else {
             return
         }
 
@@ -205,63 +223,63 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
         assert(CGSizeEqualToSize(image.extent.size, videoSize), "Input image size \(image.extent.size) does not match expected size \(videoSize).")
 
         // Create pixel buffer
-        let options = [
-            String(kCVPixelBufferPixelFormatTypeKey): NSNumber(unsignedInt: kCVPixelFormatType_32BGRA),
-            String(kCVPixelBufferWidthKey): NSNumber(integerLiteral: Int(videoSize.width)),
-            String(kCVPixelBufferHeightKey): NSNumber(integerLiteral: Int(videoSize.height)),
-            String(kCVPixelBufferOpenGLESCompatibilityKey): NSNumber(booleanLiteral: true),
-            String(kCVPixelBufferIOSurfacePropertiesKey): NSDictionary()
-        ]
+//        let options = [
+//            String(kCVPixelBufferPixelFormatTypeKey): NSNumber(unsignedInt: kCVPixelFormatType_32BGRA),
+//            String(kCVPixelBufferWidthKey): NSNumber(integerLiteral: Int(videoSize.width)),
+//            String(kCVPixelBufferHeightKey): NSNumber(integerLiteral: Int(videoSize.height)),
+//            String(kCVPixelBufferOpenGLESCompatibilityKey): NSNumber(booleanLiteral: true),
+////            String(kCVPixelBufferIOSurfacePropertiesKey): NSDictionary()
+//        ]
 
-        var pixelBuffer: CVPixelBuffer?
-
-        CVPixelBufferCreate(
-            kCFAllocatorSystemDefault,
-            Int(videoSize.width),
-            Int(videoSize.height),
-            kCVPixelFormatType_32BGRA, // kCVPixelFormatType_420YpCbCr8Planar
-            options,
-            &pixelBuffer
-        )
-
-        if pixelBuffer == nil {
-            print("Cannot allocate pixel buffer")
-            return
-        }
-
-        // Render the image to pixel buffer.
-        let bounds = CGRect(
-            origin: CGPointZero,
-            size: videoSize
-        )
-
-        CVPixelBufferLockBaseAddress(pixelBuffer!, 0)
-        outputContext.render(image, toCVPixelBuffer: pixelBuffer!, bounds: bounds, colorSpace: nil)
-        CVPixelBufferUnlockBaseAddress(pixelBuffer!, 0)
-
-
-        // Create sample buffer from image.
-        var timingInfo = CMSampleTimingInfo(
-            duration: CMTime(),
-            presentationTimeStamp: time,
-            decodeTimeStamp: kCMTimeInvalid
-        )
-
-        var videoInfo: CMVideoFormatDescription?
-        CMVideoFormatDescriptionCreateForImageBuffer(kCFAllocatorDefault, pixelBuffer!, &videoInfo)
-
-        if videoInfo == nil {
-            print("Cannot create video format description")
-            return
-        }
-
-        var sampleBuffer: CMSampleBufferRef?
-        CMSampleBufferCreateForImageBuffer(kCFAllocatorDefault, pixelBuffer!, true, nil, nil, videoInfo!, &timingInfo, &sampleBuffer)
-
-        if sampleBuffer == nil {
-            print("Cannot create sample buffer")
-            return
-        }
+//        var pixelBuffer: CVPixelBuffer?
+//
+//        CVPixelBufferCreate(
+//            kCFAllocatorSystemDefault,
+//            Int(videoSize.width),
+//            Int(videoSize.height),
+//            kCVPixelFormatType_32BGRA, // kCVPixelFormatType_420YpCbCr8Planar
+//            options,
+//            &pixelBuffer
+//        )
+//
+//        if pixelBuffer == nil {
+//            print("Cannot allocate pixel buffer")
+//            return
+//        }
+//
+//        // Render the image to pixel buffer.
+//        let bounds = CGRect(
+//            origin: CGPointZero,
+//            size: videoSize
+//        )
+//
+//        CVPixelBufferLockBaseAddress(pixelBuffer!, 0)
+////        outputContext.render(image, toCVPixelBuffer: pixelBuffer!, bounds: bounds, colorSpace: nil)
+//        CVPixelBufferUnlockBaseAddress(pixelBuffer!, 0)
+//
+//
+//        // Create sample buffer from image.
+//        var timingInfo = CMSampleTimingInfo(
+//            duration: CMTime(),
+//            presentationTimeStamp: time,
+//            decodeTimeStamp: kCMTimeInvalid
+//        )
+//
+//        var videoInfo: CMVideoFormatDescription?
+//        CMVideoFormatDescriptionCreateForImageBuffer(kCFAllocatorDefault, pixelBuffer!, &videoInfo)
+//
+//        if videoInfo == nil {
+//            print("Cannot create video format description")
+//            return
+//        }
+//
+//        var sampleBuffer: CMSampleBufferRef?
+//        CMSampleBufferCreateForImageBuffer(kCFAllocatorDefault, pixelBuffer!, true, nil, nil, videoInfo!, &timingInfo, &sampleBuffer)
+//
+//        if sampleBuffer == nil {
+//            print("Cannot create sample buffer")
+//            return
+//        }
 
         // Append the sample buffer to asset writer.
         if !sessionStarted {
@@ -270,7 +288,25 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
             sessionStarted = true
         }
 
-        assetWriterInput.appendSampleBuffer(sampleBuffer!)
+        guard let pixelBufferPool = pixelBufferAdaptor.pixelBufferPool else {
+            return
+        }
+
+        var pixelBuffer: CVPixelBuffer?
+        CVPixelBufferPoolCreatePixelBuffer(nil, pixelBufferPool, &pixelBuffer)
+
+        guard pixelBuffer != nil else {
+            print("Cannot allocate pixel buffer: \(time)")
+            return
+        }
+
+//        CVPixelBufferLockBaseAddress(pixelBuffer!, 0)
+        outputContext.render(image, toCVPixelBuffer: pixelBuffer!, bounds: pixelBufferBounds, colorSpace: nil)
+//        CVPixelBufferUnlockBaseAddress(pixelBuffer!, 0)
+
+        pixelBufferAdaptor.appendPixelBuffer(pixelBuffer!, withPresentationTime: time)
+
+//        assetWriterInput.appendSampleBuffer(sampleBuffer!)
 //        print("appended sample buffer: \(CMTimeGetSeconds(time))")
     }
 
@@ -323,12 +359,27 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
 
             assetWriter.addInput(input)
 
+            // Initialize pixel buffer adaptor to manage pixel buffer pool.
+            let pixelBufferAttributes = [
+                String(kCVPixelBufferPixelFormatTypeKey): NSNumber(unsignedInt: kCVPixelFormatType_32BGRA),
+                String(kCVPixelBufferWidthKey): NSNumber(integerLiteral: Int(videoSize.width)),
+                String(kCVPixelBufferHeightKey): NSNumber(integerLiteral: Int(videoSize.height)),
+                String(kCVPixelBufferOpenGLESCompatibilityKey): NSNumber(booleanLiteral: true),
+                //            String(kCVPixelBufferIOSurfacePropertiesKey): NSDictionary()
+            ]
+
+            let pixelBufferAdaptor = AVAssetWriterInputPixelBufferAdaptor(
+                assetWriterInput: input,
+                sourcePixelBufferAttributes: pixelBufferAttributes
+            )
+
             // Start writing
             assetWriter.startWriting()
 
             // Set class variables.
             self.assetWriter = assetWriter
             self.assetWriterInput = input
+            self.pixelBufferAdaptor = pixelBufferAdaptor
         }
         catch {
             print("Cannot create asset writer: \(error)")
