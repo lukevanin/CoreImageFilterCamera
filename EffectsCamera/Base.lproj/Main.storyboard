@@ -20,9 +20,29 @@
                             <glkView opaque="NO" clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="center" enableSetNeedsDisplay="NO" translatesAutoresizingMaskIntoConstraints="NO" id="FhL-15-hpt">
                                 <rect key="frame" x="0.0" y="0.0" width="320" height="568"/>
                             </glkView>
+                            <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="nZU-be-EcD">
+                                <rect key="frame" x="110.5" y="530" width="99" height="18"/>
+                                <subviews>
+                                    <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="HOLD TO RECORD" textAlignment="center" lineBreakMode="tailTruncation" numberOfLines="0" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="cP4-fK-I2w">
+                                        <rect key="frame" x="5" y="3" width="89" height="12"/>
+                                        <fontDescription key="fontDescription" type="system" weight="thin" pointSize="10"/>
+                                        <color key="textColor" white="1" alpha="1" colorSpace="calibratedWhite"/>
+                                        <nil key="highlightedColor"/>
+                                    </label>
+                                </subviews>
+                                <color key="backgroundColor" white="0.0" alpha="0.59999999999999998" colorSpace="calibratedWhite"/>
+                                <constraints>
+                                    <constraint firstAttribute="bottom" secondItem="cP4-fK-I2w" secondAttribute="bottom" constant="3" id="Ahb-9h-Wi2"/>
+                                    <constraint firstItem="cP4-fK-I2w" firstAttribute="leading" secondItem="nZU-be-EcD" secondAttribute="leading" constant="5" id="B0x-ve-5aS"/>
+                                    <constraint firstItem="cP4-fK-I2w" firstAttribute="top" secondItem="nZU-be-EcD" secondAttribute="top" constant="3" id="fhj-45-DoD"/>
+                                    <constraint firstAttribute="trailing" secondItem="cP4-fK-I2w" secondAttribute="trailing" constant="5" id="pOA-Rl-RsE"/>
+                                </constraints>
+                            </view>
                         </subviews>
                         <color key="backgroundColor" white="1" alpha="1" colorSpace="custom" customColorSpace="calibratedWhite"/>
                         <constraints>
+                            <constraint firstItem="nZU-be-EcD" firstAttribute="centerX" secondItem="8bC-Xf-vdC" secondAttribute="centerX" id="53I-tw-xQA"/>
+                            <constraint firstItem="wfy-db-euE" firstAttribute="top" secondItem="nZU-be-EcD" secondAttribute="bottom" constant="20" id="6nS-lB-h2m"/>
                             <constraint firstAttribute="trailing" secondItem="FhL-15-hpt" secondAttribute="trailing" id="OQ6-Nj-idw"/>
                             <constraint firstItem="FhL-15-hpt" firstAttribute="top" secondItem="8bC-Xf-vdC" secondAttribute="top" id="Ton-yl-udB"/>
                             <constraint firstItem="FhL-15-hpt" firstAttribute="leading" secondItem="8bC-Xf-vdC" secondAttribute="leading" id="anR-u9-oCh"/>
@@ -32,6 +52,8 @@
                     <simulatedScreenMetrics key="simulatedDestinationMetrics" type="retina4"/>
                     <connections>
                         <outlet property="glView" destination="FhL-15-hpt" id="yJI-Rw-hbb"/>
+                        <outlet property="stateLabel" destination="cP4-fK-I2w" id="hCk-Du-2JL"/>
+                        <outlet property="stateView" destination="nZU-be-EcD" id="AgA-IO-dxq"/>
                     </connections>
                 </viewController>
                 <placeholder placeholderIdentifier="IBFirstResponder" id="dkx-z0-nzr" sceneMemberID="firstResponder"/>
